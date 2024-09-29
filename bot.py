@@ -447,11 +447,15 @@ async def get_data(data_file, proxy_file):
 
 async def main():
     banner = f"""
-{magenta}┏┓┳┓┏┓  ┏┓    •      {white}BlumTod Auto Claim for {green}blum
-{magenta}┗┓┃┃┗┓  ┃┃┏┓┏┓┓┏┓┏╋  {green}Author : {white}AkasakaID
-{magenta}┗┛┻┛┗┛  ┣┛┛ ┗┛┃┗ ┗┗  {white}Github : {green}https://github.com/AkasakaID
-{magenta}              ┛      {green}Note : {white}Every Action Has a Consequence
-        """
+    
+  {red}  ███████ ██  ██████  ███    ██  █████  ██          ██████  ███████ ██   ██ ████████ {red}
+  {red}  ██      ██ ██       ████   ██ ██   ██ ██          ██   ██ ██      ██  ██     ██    {red}
+ {white} ███████ ██ ██   ███ ██ ██  ██ ███████ ██          ██████  █████   █████      ██    {white}
+  {white}     ██ ██ ██    ██ ██  ██ ██ ██   ██ ██          ██   ██ ██      ██  ██     ██    {white}
+  {white ███████ ██  ██████  ██   ████ ██   ██ ███████     ██   ██ ███████ ██   ██    ██    {white}
+
+          dyor,, resiko ada di tangan kalian.. 
+                            """
     arg = argparse.ArgumentParser()
     arg.add_argument(
         "--data",
@@ -490,7 +494,7 @@ async def main():
                 "auto_claim": True,
                 "auto_task": True,
                 "auto_game": True,
-                "low": 240,
+                "low": 220,
                 "high": 250,
                 "clow": 30,
                 "chigh": 60,
@@ -507,7 +511,7 @@ async def main():
                 auto_task=cfg.get("auto_task"),
                 auto_game=cfg.get("auto_game"),
                 auto_claim=cfg.get("auto_claim"),
-                low=int(cfg.get("low", 240)),
+                low=int(cfg.get("low", 220)),
                 high=int(cfg.get("high", 250)),
                 clow=int(cfg.get("clow", 30)),
                 chigh=int(cfg.get("chigh", 60)),
