@@ -5,6 +5,8 @@ import json
 import anyio
 import httpx
 import random
+import uuid
+import requests
 import asyncio
 import argparse
 import aiofiles
@@ -25,6 +27,7 @@ from models import (
 import python_socks
 from httpx_socks import AsyncProxyTransport
 from fake_useragent import UserAgent
+# Initialize logging
 
 
 init(autoreset=True)
@@ -71,9 +74,9 @@ class BlumTod:
         if len(self.proxies) > 0:
             proxy = self.get_random_proxy(id, False)
             transport = AsyncProxyTransport.from_url(proxy)
-            self.ses = httpx.AsyncClient(transport=transport, timeout=1000)
+            self.ses = httpx.AsyncClient(transport=transport, timeout=httpx.Timeout(10.0))
         else:
-            self.ses = httpx.AsyncClient(timeout=1000)
+            self.ses = httpx.AsyncClient(timeout=httpx.Timeout(10.0))
         self.headers = {
             "accept": "application/json, text/plain, */*",
             "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36 Edg/125.0.0.0",
@@ -126,10 +129,13 @@ class BlumTod:
                 if not await aiofiles.ospath.exists(log_file):
                     async with aiofiles.open(log_file, "w") as w:
                         await w.write("")
+
                 logsize = await aiofiles.ospath.getsize(log_file)
+
                 if logsize / 1024 / 1024 > 1:
                     async with aiofiles.open(log_file, "w") as w:
                         await w.write("")
+
                 if data is None:
                     res = await self.ses.get(url, headers=headers)
                 elif data == "":
@@ -138,16 +144,17 @@ class BlumTod:
                     res = await self.ses.post(url, headers=headers, data=data)
                 async with aiofiles.open(log_file, "a", encoding="utf-8") as hw:
                     await hw.write(f"{res.status_code} {res.text}\n")
+                # print(res.status_code)
+                # print(res.text)
                 if "<title>" in res.text:
                     self.log(f"{yellow}failed get json response !")
-                    await countdown(3)
-                    continue
+                    return None
 
                 return res
             except (
-                httpx.ProxyError,
-                python_socks._errors.ProxyTimeoutError,
-                python_socks._errors.ProxyError,
+                    httpx.ProxyError,
+                    python_socks._errors.ProxyTimeoutError,
+                    python_socks._errors.ProxyError,
             ):
                 proxy = self.get_random_proxy(0, israndom=True)
                 transport = AsyncProxyTransport.from_url(proxy)
@@ -201,6 +208,30 @@ class BlumTod:
         self.log(f"{green}success get access token !")
         self.headers["authorization"] = f"Bearer {token}"
         return True
+
+    # async def get_data_payload(self):
+    #     url = 'https://raw.githubusercontent.com/zuydd/database/main/blum.json'
+    #     data = requests.get(url=url)
+    #     return data.json()
+
+
+    async def create_payload(self, game_id, points, dogs):
+        # data = await self.get_data_payload()
+        # payload_server = data.get('payloadServer', [])
+        # filtered_data = [item for item in payload_server if item['status'] == 1]
+        # random_id = random.choice([item['id'] for item in filtered_data])
+        payload_data = {'gameId': game_id,
+                'points': str(points),
+                "dogs": dogs}
+
+        PAYLOAD_SERVER_URL = "https://blum-toga-c3d9617e40ff.herokuapp.com/api/game"
+        resp = requests.post(PAYLOAD_SERVER_URL, json=payload_data)
+
+        if resp is not None:
+            data = resp.json()
+            if "payload" in data:
+                return json.dumps({"payload": data["payload"]})
+            return None
 
     async def start(self):
         rtime = random.randint(self.cfg.clow, self.cfg.chigh)
@@ -303,32 +334,63 @@ class BlumTod:
         if self.cfg.auto_task:
             task_url = "https://earn-domain.blum.codes/api/v1/tasks"
             res = await self.http(task_url, self.headers)
-            for tasks in res.json():
-                if isinstance(tasks, str):
-                    self.log(f"{yellow}failed get task list !")
-                    break
-                for k in list(tasks.keys()):
-                    if k != "tasks" and k != "subSections":
-                        continue
-                    for t in tasks.get(k):
-                        if isinstance(t, dict):
-                            subtasks = t.get("subTasks")
-                            if subtasks is not None:
-                                for task in subtasks:
-                                    await self.solve(task)
-                                await self.solve(t)
-                                continue
-                        _tasks = t.get("tasks")
-                        if not _tasks:
+            if res:
+                for tasks in res.json():
+                    if isinstance(tasks, str):
+                        self.log(f"{yellow}failed get task list !")
+                        break
+                    for k in list(tasks.keys()):
+                        if k != "tasks" and k != "subSections":
                             continue
-                        for task in _tasks:
-                            await self.solve(task)
+                        for t in tasks.get(k):
+                            if isinstance(t, dict):
+                                subtasks = t.get("subTasks")
+                                if subtasks is not None:
+                                    for task in subtasks:
+                                        await self.solve(task)
+                                    await self.solve(t)
+                                    continue
+                            _tasks = t.get("tasks")
+                            if not _tasks:
+                                continue
+                            for task in _tasks:
+                                await self.solve(task)
         if self.cfg.auto_game:
-            play_url = "https://game-domain.blum.codes/api/v1/game/play"
-            claim_url = "https://game-domain.blum.codes/api/v1/game/claim"
-            game = True
+            play_url = "https://game-domain.blum.codes/api/v2/game/play"
+            claim_url = "https://game-domain.blum.codes/api/v2/game/claim"
+            dogs_url = 'https://game-domain.blum.codes/api/v2/game/eligibility/dogs_drop'
+
+            #проверяем - доступен ли сервер декодирования
+            try:
+
+                PAYLOAD_SERVER_URL = "https://blum-toga-c3d9617e40ff.herokuapp.com/api/game"
+                random_uuid = str(uuid.uuid4())
+                points = random.randint(self.cfg.low, self.cfg.high)
+                payload_data = {'gameId': random_uuid,
+                                'points': str(points),
+                                "dogs": 0}
+                resp = requests.post(PAYLOAD_SERVER_URL, json=payload_data)
+                data = resp.json()
+
+                if "payload" in data:
+                    self.log(f"{green}Games available right now!")
+                    game = True
+
+                else:
+                    self.log(f"{red}Failed start games - {e}")
+                    self.log(f"{red}Games are not available right now!")
+                    game = False
+
+            except Exception as e:
+                self.log(f"{red}Failed start games - {e}")
+                self.log(f"{red}Games are not available right now!")
+                game = False
+
+
             while game:
                 res = await self.http(balance_url, self.headers)
+
+                #количество игр
                 play = res.json().get("playPasses")
                 if play is None:
                     self.log(f"{yellow}failed get game ticket !")
@@ -336,14 +398,19 @@ class BlumTod:
                 self.log(f"{green}you have {white}{play}{green} game ticket")
                 if play <= 0:
                     break
+
+                #основной цикл игр
                 for i in range(play):
                     if self.is_expired(self.headers.get("authorization").split(" ")[1]):
                         result = await self.login()
                         if not result:
                             break
                         continue
+
+                    #старт игры
                     res = await self.http(play_url, self.headers, "")
                     game_id = res.json().get("gameId")
+
                     if game_id is None:
                         message = res.json().get("message", "")
                         if message == "cannot start game":
@@ -352,24 +419,51 @@ class BlumTod:
                             break
                         self.log(f"{yellow}{message}")
                         continue
+
+
                     while True:
-                        await countdown(30)
+
+                        # количество очков
                         point = random.randint(self.cfg.low, self.cfg.high)
-                        data = json.dumps({"gameId": game_id, "points": point})
-                        res = await self.http(claim_url, self.headers, data)
+
+                        # проверяем догс
+                        try:
+                            res = await self.http(dogs_url, self.headers)
+                            if res is not None:
+                                eligible = res.json().get('eligible', False)
+
+                        except Exception as e:
+                            self.error(f"Failed elif dogs, error: {e}")
+                            eligible = None
+
+                        #создаем payload
+                        if eligible:
+                            dogs = random.randint(25, 30) * 5
+                            self.log(f'dogs = {dogs}')
+                            payload = await self.create_payload(game_id=game_id, points=point,
+                                                             dogs=dogs)
+                        else:
+                            payload = await self.create_payload(game_id=game_id, points=point,
+                                                             dogs=0)
+
+                        await countdown(random.randint(31, 40))
+
+                        res = await self.http(claim_url, self.headers, payload)
+
                         if "OK" in res.text:
                             self.log(
                                 f"{green}success earn {white}{point}{green} from game !"
                             )
                             break
-                        message = res.json().get("message", "")
-                        if message == "game session not finished":
-                            continue
-                        self.log(f"{red}failed earn {white}{point}{red} from game !")
+                        else:
+                            self.log(f"{red}failed earn {white}{point}{red} from game !")
                         break
         res = await self.http(balance_url, self.headers)
         balance = res.json().get("availableBalance", 0)
         self.log(f"{green}balance :{white}{balance}")
+        now = datetime.now().strftime("%Yx%mx%d %H:%M")
+        open("balance.log", "a", encoding="utf-8").write(
+            f"{now} - {self.p} - {balance} - {first_name}\n")
         await update_balance(uid, balance)
         return round(end_farming / 1000)
 
@@ -383,7 +477,7 @@ class BlumTod:
         claim_task_url = f"https://earn-domain.blum.codes/api/v1/tasks/{task_id}/claim"
         while True:
             if task_status == "FINISHED":
-                self.log(f"{yellow}already complete task id {white}{task_id} !")
+                self.log(f"{yellow}already complete task id {white}{task_title} !")
                 return
             if task_status == "READY_FOR_CLAIM" or task_status == "STARTED":
                 _res = await self.http(claim_task_url, self.headers, "")
@@ -392,36 +486,51 @@ class BlumTod:
                     return
                 _status = _res.json().get("status")
                 if _status == "FINISHED":
-                    self.log(f"{green}success complete task id {white}{task_id} !")
+                    self.log(f"{green}success complete task id {white}{task_title} !")
                     return
             if task_status == "NOT_STARTED" and task_type == "PROGRESS_TARGET":
                 return
             if task_status == "NOT_STARTED":
                 _res = await self.http(start_task_url, self.headers, "")
                 await countdown(3)
-                message = _res.json().get("message")
-                if message:
+                try:
+                    message = _res.json().get("message")
+                    if message:
+                        return
+                    task_status = _res.json().get("status")
+                    continue
+                except Exception as e:
+                    self.log(e)
                     return
-                task_status = _res.json().get("status")
-                continue
             if validation_type == "KEYWORD" or task_status == "READY_FOR_VERIFY":
+                await countdown(3)
                 verify_url = (
                     f"https://earn-domain.blum.codes/api/v1/tasks/{task_id}/validate"
                 )
-                answer_url = "https://akasakaid.github.io/blum/answer.json"
+                # answer_url = "https://akasakaid.github.io/blum/answer.json"
+                answer_url = "https://raw.githubusercontent.com/boytegar/BlumBOT/d55dcc033e508ee8dc10218f72f7ac369de1039f/verif.json"
                 res_ = await self.http(answer_url, {"User-Agent": "Marin Kitagawa"})
                 answers = res_.json()
                 answer = answers.get(task_id)
                 if not answer:
                     self.log(f"{yellow}answers to quiz tasks are not yet available.")
+                    break
                     return
                 data = {"keyword": answer}
                 res = await self.http(verify_url, self.headers, json.dumps(data))
-                message = res.json().get("message")
-                if message:
-                    return
-                task_status = res.json().get("status")
-                continue
+                if res:
+                    message = res.json().get("message")
+                    if message:
+                        self.log(message)
+                        break
+                        return
+                    task_status = res.json().get("status")
+                    continue
+                else:
+                    break
+            else:
+                break
+
 
 
 async def countdown(t):
@@ -454,8 +563,8 @@ async def main():
 |___/_|\__, |_| |_|\__,_|_| |_|  \___|_|\_\\__|
        |___/                                   
 
-          dyor,, resiko ada di tangan kalian.. 
-          """
+          dyor,, resiko ada di tangan kalian..
+        """
     arg = argparse.ArgumentParser()
     arg.add_argument(
         "--data",
@@ -494,7 +603,7 @@ async def main():
                 "auto_claim": True,
                 "auto_task": True,
                 "auto_game": True,
-                "low": 220,
+                "low": 240,
                 "high": 250,
                 "clow": 30,
                 "chigh": 60,
@@ -511,7 +620,7 @@ async def main():
                 auto_task=cfg.get("auto_task"),
                 auto_game=cfg.get("auto_game"),
                 auto_claim=cfg.get("auto_claim"),
-                low=int(cfg.get("low", 220)),
+                low=int(cfg.get("low", 240)),
                 high=int(cfg.get("high", 250)),
                 clow=int(cfg.get("clow", 30)),
                 chigh=int(cfg.get("chigh", 60)),
@@ -531,6 +640,8 @@ async def main():
     {green}6{white}.{green}) {white}start bot (multiprocessing)
     {green}7{white}.{green}) {white}start bot (sync mode)
         """
+        #{green}3{white}.{green}) {white}set on/off auto play game ({(green + "active" if config.auto_game else red + "non-active")})
+        #{green}3{white}.{green}) {white}set on/off auto play game ({(red + "games are not available right now!")})
         opt = None
         if args.action:
             opt = args.action
